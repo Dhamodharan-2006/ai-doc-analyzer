@@ -150,7 +150,7 @@ Express Backend (Render)
 
 ### 1. Clone Repository
 \`\`\`bash
-git clone https://github.com/YOUR_USERNAME/ai-doc-analyzer.git
+git clone https://github.com/Dhamodharan-2006/ai-doc-analyzer.git
 cd ai-doc-analyzer
 \`\`\`
 
