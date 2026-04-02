@@ -8,7 +8,7 @@ import {
   CheckCircle2, Loader2, Sparkles, Download,
 } from "lucide-react";
 
-const API_BASE = import.meta.env.VITE_API_URL || "/api";
+const API_BASE = "https://ai-doc-analyzer-4wdv.onrender.com/api";
 const API_KEY = "mySecretKey123";
 
 const TABS = [
