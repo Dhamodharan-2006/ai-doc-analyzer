@@ -28,24 +28,46 @@ const upload = multer({
     if (allowedMimes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error(`Unsupported file type: ${file.mimetype}`));
+      cb(null, true); // Accept all — let parser handle it
     }
   },
 });
 
+// ─── POST /api/analyze ────────────────────────────────────────────────────────
 router.post("/analyze", authMiddleware, (req, res, next) => {
-  upload.single("document")(req, res, (err) => {
+  upload.any()(req, res, (err) => {
     if (err instanceof multer.MulterError) {
       if (err.code === "LIMIT_FILE_SIZE") {
         return res.status(413).json({
           success: false,
           error: `File too large. Max allowed: ${MAX_SIZE_MB}MB.`,
+          fileName: null,
+          summary: null,
+          entities: null,
+          sentiment: null,
         });
       }
-      return res.status(400).json({ success: false, error: err.message });
+      return res.status(400).json({
+        success: false,
+        error: err.message,
+        fileName: null,
+        summary: null,
+        entities: null,
+        sentiment: null,
+      });
     } else if (err) {
-      return res.status(400).json({ success: false, error: err.message });
+      return res.status(400).json({
+        success: false,
+        error: err.message,
+        fileName: null,
+        summary: null,
+        entities: null,
+        sentiment: null,
+      });
     }
+
+    // Accept any field name: document, file, upload, pdf, docx, etc.
+    req.file = req.file || (req.files && req.files[0]);
     next();
   });
 }, async (req, res) => {
@@ -56,18 +78,19 @@ router.post("/analyze", authMiddleware, (req, res, next) => {
     if (!req.file) {
       return res.status(400).json({
         success: false,
-        error: 'No file uploaded. Send file with field name "document" as multipart/form-data.',
+        error: 'No file uploaded. Send file as multipart/form-data with any field name.',
         fileName: null,
         summary: null,
         entities: null,
         sentiment: null,
+        request_id: requestId,
       });
     }
 
     const { buffer, mimetype, originalname, size } = req.file;
     console.log(`[${requestId}] Processing: ${originalname} (${(size / 1024).toFixed(1)} KB)`);
 
-    // Step 1: Parse file
+    // ─── Step 1: Parse File ───────────────────────────────
     let parsed;
     try {
       parsed = await parseFile(buffer, mimetype, originalname);
@@ -83,7 +106,7 @@ router.post("/analyze", authMiddleware, (req, res, next) => {
       });
     }
 
-    // Step 2: AI Analysis
+    // ─── Step 2: AI Analysis ──────────────────────────────
     let analysis;
     try {
       analysis = await analyzeWithAI(parsed.extracted_text, parsed.file_type);
@@ -101,12 +124,12 @@ router.post("/analyze", authMiddleware, (req, res, next) => {
 
     const processingTime = Date.now() - startTime;
 
-    // Step 3: Return response
+    // ─── Step 3: Return Response ──────────────────────────
     return res.status(200).json({
       success: true,
       request_id: requestId,
 
-      // ─── TOP LEVEL — GUVI Required Fields ───────────────
+      // ── GUVI Required Top Level Fields ──────────────────
       fileName: originalname,
       summary: analysis.summary || "",
       entities: {
@@ -129,7 +152,7 @@ router.post("/analyze", authMiddleware, (req, res, next) => {
       confidenceScore: analysis.confidence_score || 0,
       extractedText: parsed.extracted_text,
 
-      // ─── Detailed Nested Info ────────────────────────────
+      // ── Detailed Nested Info ─────────────────────────────
       file_info: {
         filename: originalname,
         file_type: parsed.file_type,
@@ -180,6 +203,7 @@ router.post("/analyze", authMiddleware, (req, res, next) => {
   }
 });
 
+// ─── GET /api/analyze ─────────────────────────────────────────────────────────
 router.get("/analyze", (req, res) => {
   res.json({
     endpoint: "POST /api/analyze",
@@ -188,16 +212,23 @@ router.get("/analyze", (req, res) => {
     request: {
       method: "POST",
       content_type: "multipart/form-data",
-      field_name: "document",
-      supported_formats: ["PDF", "DOCX", "JPG", "PNG", "WEBP"],
+      field_name: "any — document, file, upload, etc.",
+      supported_formats: ["PDF", "DOCX", "JPG", "PNG", "WEBP", "GIF", "BMP"],
       max_size: `${MAX_SIZE_MB}MB`,
     },
-    required_response_fields: [
-      "fileName",
-      "summary",
-      "entities",
-      "sentiment",
-    ],
+    response_fields: {
+      fileName: "Original filename",
+      summary: "AI generated summary",
+      entities: "Named entities — persons, orgs, dates, locations, etc.",
+      sentiment: "Positive | Negative | Neutral | Mixed",
+      documentType: "Classified document type",
+      language: "Detected language",
+      keyPoints: "Array of key points",
+      topics: "Main topics",
+      actionItems: "Action items found",
+      confidenceScore: "0 to 1",
+      extractedText: "Full extracted text",
+    },
   });
 });
 
