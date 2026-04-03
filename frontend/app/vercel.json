@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://ai-doc-analyzer-4wdv.onrender.com/api/:path*"
+    }
+  ]
+}
