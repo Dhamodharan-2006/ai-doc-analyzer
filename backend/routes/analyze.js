@@ -57,12 +57,17 @@ router.post("/analyze", authMiddleware, (req, res, next) => {
       return res.status(400).json({
         success: false,
         error: 'No file uploaded. Send file with field name "document" as multipart/form-data.',
+        fileName: null,
+        summary: null,
+        entities: null,
+        sentiment: null,
       });
     }
 
     const { buffer, mimetype, originalname, size } = req.file;
     console.log(`[${requestId}] Processing: ${originalname} (${(size / 1024).toFixed(1)} KB)`);
 
+    // Step 1: Parse file
     let parsed;
     try {
       parsed = await parseFile(buffer, mimetype, originalname);
@@ -70,10 +75,15 @@ router.post("/analyze", authMiddleware, (req, res, next) => {
       return res.status(422).json({
         success: false,
         error: `File parsing failed: ${parseErr.message}`,
+        fileName: originalname,
+        summary: null,
+        entities: null,
+        sentiment: null,
         request_id: requestId,
       });
     }
 
+    // Step 2: AI Analysis
     let analysis;
     try {
       analysis = await analyzeWithAI(parsed.extracted_text, parsed.file_type);
@@ -81,20 +91,45 @@ router.post("/analyze", authMiddleware, (req, res, next) => {
       return res.status(500).json({
         success: false,
         error: `AI analysis failed: ${aiErr.message}`,
-        partial_result: {
-          extracted_text: parsed.extracted_text,
-          word_count: parsed.word_count,
-          file_type: parsed.file_type,
-        },
+        fileName: originalname,
+        summary: null,
+        entities: null,
+        sentiment: null,
         request_id: requestId,
       });
     }
 
     const processingTime = Date.now() - startTime;
 
+    // Step 3: Return response
     return res.status(200).json({
       success: true,
       request_id: requestId,
+
+      // ─── TOP LEVEL — GUVI Required Fields ───────────────
+      fileName: originalname,
+      summary: analysis.summary || "",
+      entities: {
+        persons: analysis.entities?.persons || [],
+        organizations: analysis.entities?.organizations || [],
+        dates: analysis.entities?.dates || [],
+        locations: analysis.entities?.locations || [],
+        monetary_amounts: analysis.entities?.monetary_amounts || [],
+        emails: analysis.entities?.emails || [],
+        phone_numbers: analysis.entities?.phone_numbers || [],
+        urls: analysis.entities?.urls || [],
+      },
+      sentiment: analysis.sentiment || "Neutral",
+      documentType: analysis.document_type || "Unknown",
+      language: analysis.language || "Unknown",
+      keyPoints: analysis.key_points || [],
+      topics: analysis.topics || [],
+      actionItems: analysis.action_items || [],
+      tablesDetected: analysis.tables_detected || [],
+      confidenceScore: analysis.confidence_score || 0,
+      extractedText: parsed.extracted_text,
+
+      // ─── Detailed Nested Info ────────────────────────────
       file_info: {
         filename: originalname,
         file_type: parsed.file_type,
@@ -130,11 +165,16 @@ router.post("/analyze", authMiddleware, (req, res, next) => {
       processing_time_ms: processingTime,
       timestamp: new Date().toISOString(),
     });
+
   } catch (error) {
     console.error(`[${requestId}] Unexpected error:`, error);
     return res.status(500).json({
       success: false,
       error: "An unexpected server error occurred.",
+      fileName: null,
+      summary: null,
+      entities: null,
+      sentiment: null,
       request_id: requestId,
     });
   }
@@ -152,6 +192,12 @@ router.get("/analyze", (req, res) => {
       supported_formats: ["PDF", "DOCX", "JPG", "PNG", "WEBP"],
       max_size: `${MAX_SIZE_MB}MB`,
     },
+    required_response_fields: [
+      "fileName",
+      "summary",
+      "entities",
+      "sentiment",
+    ],
   });
 });
 
